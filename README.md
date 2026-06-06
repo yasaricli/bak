@@ -2,7 +2,7 @@
 
 A local git diff viewer that opens a GitHub-style UI in the browser.
 
-![dark theme diff viewer with sidebar](.github/preview.png)
+![dark theme diff viewer with sidebar](screen.png)
 
 ## Install
 
@@ -20,6 +20,37 @@ bak --staged     # staged changes
 bak HEAD         # last commit
 bak HEAD~2       # two commits ago
 bak HEAD~3..HEAD # range between commits
+```
+
+## Development
+
+**Prerequisites:** Go 1.21+ and `git` in your PATH.
+
+Clone and build locally:
+
+```sh
+git clone https://github.com/yasaricli/bak.git
+cd bak
+go build -o bak .
+./bak              # run from the project directory
+```
+
+Run without building:
+
+```sh
+go run . --staged
+```
+
+Run tests:
+
+```sh
+go test ./...
+```
+
+To install your local build into `$GOPATH/bin`:
+
+```sh
+go install .
 ```
 
 ## How it works

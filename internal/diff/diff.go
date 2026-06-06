@@ -23,11 +23,14 @@ type Line struct {
 }
 
 type File struct {
-	OldName string
-	NewName string
-	Added   int
-	Removed int
-	Lines   []Line
+	OldName  string
+	NewName  string
+	Added    int
+	Removed  int
+	Lines    []Line
+	IsBinary bool
+	OldImage []byte
+	NewImage []byte
 }
 
 func (f *File) DisplayName() string {
@@ -49,21 +52,34 @@ func Parse(raw string) []File {
 				files = append(files, *cur)
 			}
 			cur = &File{}
+			// Pre-fill names for binary files (non-binary overwrites via --- / +++ lines)
+			rest := strings.TrimPrefix(l, "diff --git a/")
+			if idx := strings.Index(rest, " b/"); idx >= 0 {
+				cur.OldName = rest[:idx]
+				cur.NewName = rest[idx+3:]
+			}
 
 		case cur == nil:
 			continue
 
 		case strings.HasPrefix(l, "--- "):
 			name := strings.TrimPrefix(strings.TrimPrefix(l, "--- "), "a/")
-			if name != "/dev/null" {
+			if name == "/dev/null" {
+				cur.OldName = ""
+			} else {
 				cur.OldName = name
 			}
 
 		case strings.HasPrefix(l, "+++ "):
 			name := strings.TrimPrefix(strings.TrimPrefix(l, "+++ "), "b/")
-			if name != "/dev/null" {
+			if name == "/dev/null" {
+				cur.NewName = ""
+			} else {
 				cur.NewName = name
 			}
+
+		case strings.HasPrefix(l, "Binary files "):
+			cur.IsBinary = true
 
 		case strings.HasPrefix(l, "@@ "):
 			oldLine, newLine = parseHunkHeader(l)

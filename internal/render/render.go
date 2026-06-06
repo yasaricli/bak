@@ -2,6 +2,7 @@
 package render
 
 import (
+	"encoding/base64"
 	"html"
 	"strconv"
 	"strings"
@@ -9,10 +10,10 @@ import (
 	"github.com/yasaricli/bak/internal/diff"
 )
 
-func HTML(files []diff.File, title string) string {
+func HTML(files []diff.File, title, branch string) string {
 	var b strings.Builder
 	b.WriteString(header(title))
-	b.WriteString(sidebar(files))
+	b.WriteString(sidebar(files, branch))
 	b.WriteString(mainContent(files))
 	b.WriteString(footer())
 	return b.String()
@@ -25,6 +26,7 @@ func header(title string) string {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>` + html.EscapeString(title) + `</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <style>
 ` + css() + `
 </style>
@@ -33,9 +35,15 @@ func header(title string) string {
 `
 }
 
-func sidebar(files []diff.File) string {
+func sidebar(files []diff.File, branch string) string {
 	var b strings.Builder
 	b.WriteString(`<nav id="sidebar">`)
+	if branch != "" {
+		b.WriteString(`<div id="branch-bar">`)
+		b.WriteString(`<span class="branch-icon">⎇</span>`)
+		b.WriteString(`<span class="branch-name">` + html.EscapeString(branch) + `</span>`)
+		b.WriteString(`</div>`)
+	}
 	b.WriteString(`<div id="sidebar-header">`)
 	b.WriteString(`<span>Changed Files</span><span class="file-count">` + strconv.Itoa(len(files)) + `</span>`)
 	b.WriteString(`</div>`)
@@ -74,10 +82,12 @@ func mainContent(files []diff.File) string {
 
 	for i, f := range files {
 		name := f.DisplayName()
-		b.WriteString(`<section class="diff-file" id="file-` + strconv.Itoa(i) + `">`)
+		lang := fileLang(name)
+		b.WriteString(`<section class="diff-file" id="file-` + strconv.Itoa(i) + `" data-lang="` + lang + `">`)
 
 		// File header
-		b.WriteString(`<div class="diff-file-header">`)
+		b.WriteString(`<div class="diff-file-header" onclick="toggleFile(this)">`)
+		b.WriteString(`<span class="diff-chevron">▾</span>`)
 		b.WriteString(`<span class="diff-file-icon">` + fileIcon(name) + `</span>`)
 		b.WriteString(`<span class="diff-file-name">` + html.EscapeString(name) + `</span>`)
 		b.WriteString(`<span class="diff-file-stats">`)
@@ -90,33 +100,40 @@ func mainContent(files []diff.File) string {
 		b.WriteString(`</span>`)
 		b.WriteString(`</div>`)
 
-		// Diff table
-		b.WriteString(`<div class="diff-body"><table class="diff-table">`)
-		for _, line := range f.Lines {
-			switch line.Type {
-			case diff.LineHunk:
-				b.WriteString(`<tr class="line-hunk"><td colspan="3">` + html.EscapeString(line.Content) + `</td></tr>`)
-			case diff.LineAdd:
-				b.WriteString(`<tr class="line-add">`)
-				b.WriteString(`<td class="ln"></td>`)
-				b.WriteString(`<td class="ln">` + strconv.Itoa(line.NewNum) + `</td>`)
-				b.WriteString(`<td class="lc"><span class="sign">+</span>` + html.EscapeString(line.Content) + `</td>`)
-				b.WriteString(`</tr>`)
-			case diff.LineDel:
-				b.WriteString(`<tr class="line-del">`)
-				b.WriteString(`<td class="ln">` + strconv.Itoa(line.OldNum) + `</td>`)
-				b.WriteString(`<td class="ln"></td>`)
-				b.WriteString(`<td class="lc"><span class="sign">-</span>` + html.EscapeString(line.Content) + `</td>`)
-				b.WriteString(`</tr>`)
-			case diff.LineCtx:
-				b.WriteString(`<tr class="line-ctx">`)
-				b.WriteString(`<td class="ln">` + strconv.Itoa(line.OldNum) + `</td>`)
-				b.WriteString(`<td class="ln">` + strconv.Itoa(line.NewNum) + `</td>`)
-				b.WriteString(`<td class="lc"><span class="sign"> </span>` + html.EscapeString(line.Content) + `</td>`)
-				b.WriteString(`</tr>`)
+		// Body: image preview, binary notice, or diff table
+		switch {
+		case f.OldImage != nil || f.NewImage != nil:
+			b.WriteString(imageSection(f))
+		case f.IsBinary:
+			b.WriteString(`<div class="binary-notice">⊘ Binary file — no preview available</div>`)
+		default:
+			b.WriteString(`<div class="diff-body"><table class="diff-table">`)
+			for _, line := range f.Lines {
+				switch line.Type {
+				case diff.LineHunk:
+					b.WriteString(`<tr class="line-hunk"><td colspan="3">` + html.EscapeString(line.Content) + `</td></tr>`)
+				case diff.LineAdd:
+					b.WriteString(`<tr class="line-add">`)
+					b.WriteString(`<td class="ln"></td>`)
+					b.WriteString(`<td class="ln">` + strconv.Itoa(line.NewNum) + `</td>`)
+					b.WriteString(`<td class="lc"><span class="sign">+</span>` + html.EscapeString(line.Content) + `</td>`)
+					b.WriteString(`</tr>`)
+				case diff.LineDel:
+					b.WriteString(`<tr class="line-del">`)
+					b.WriteString(`<td class="ln">` + strconv.Itoa(line.OldNum) + `</td>`)
+					b.WriteString(`<td class="ln"></td>`)
+					b.WriteString(`<td class="lc"><span class="sign">-</span>` + html.EscapeString(line.Content) + `</td>`)
+					b.WriteString(`</tr>`)
+				case diff.LineCtx:
+					b.WriteString(`<tr class="line-ctx">`)
+					b.WriteString(`<td class="ln">` + strconv.Itoa(line.OldNum) + `</td>`)
+					b.WriteString(`<td class="ln">` + strconv.Itoa(line.NewNum) + `</td>`)
+					b.WriteString(`<td class="lc"><span class="sign"> </span>` + html.EscapeString(line.Content) + `</td>`)
+					b.WriteString(`</tr>`)
+				}
 			}
+			b.WriteString(`</table></div>`)
 		}
-		b.WriteString(`</table></div>`)
 		b.WriteString(`</section>`)
 	}
 
@@ -125,12 +142,20 @@ func mainContent(files []diff.File) string {
 }
 
 func footer() string {
-	return `<script>
+	return `<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>
+function toggleFile(header) {
+  header.closest('.diff-file').classList.toggle('collapsed');
+}
+
 function jumpTo(id, el) {
   document.querySelectorAll('.file-item').forEach(e => e.classList.remove('active'));
   if (el) el.classList.add('active');
   var t = document.getElementById(id);
-  if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (t) {
+    if (t.classList.contains('collapsed')) t.classList.remove('collapsed');
+    t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 (function () {
@@ -148,6 +173,28 @@ function jumpTo(id, el) {
   });
 })();
 
+(function () {
+  document.querySelectorAll('.diff-file[data-lang]').forEach(function (section) {
+    var lang = section.dataset.lang;
+    if (!lang) return;
+    var rows = Array.from(section.querySelectorAll('tr.line-add, tr.line-del, tr.line-ctx'));
+    if (!rows.length) return;
+    var code = rows.map(function (r) {
+      return r.querySelector('.lc').textContent.slice(1);
+    }).join('\n');
+    var result;
+    try {
+      result = hljs.highlight(code, { language: lang, ignoreIllegals: true });
+    } catch (e) { return; }
+    var hLines = result.value.split('\n');
+    rows.forEach(function (row, i) {
+      var lc = row.querySelector('.lc');
+      var sign = lc.querySelector('.sign').outerHTML;
+      lc.innerHTML = sign + (hLines[i] !== undefined ? hLines[i] : '');
+    });
+  });
+})();
+
 </script>
 </body>
 </html>
@@ -162,6 +209,73 @@ func shortName(path string) string {
 	return ".../" + strings.Join(parts[len(parts)-2:], "/")
 }
 
+func imageSection(f diff.File) string {
+	var b strings.Builder
+	b.WriteString(`<div class="img-section">`)
+	if f.OldImage != nil && f.NewImage != nil {
+		b.WriteString(`<div class="img-compare">`)
+		b.WriteString(`<div class="img-panel img-panel-del"><div class="img-label img-label-del">Before</div>`)
+		b.WriteString(imageTag(f.OldImage, f.OldName))
+		b.WriteString(`</div>`)
+		b.WriteString(`<div class="img-panel img-panel-add"><div class="img-label img-label-add">After</div>`)
+		b.WriteString(imageTag(f.NewImage, f.NewName))
+		b.WriteString(`</div></div>`)
+	} else if f.NewImage != nil {
+		b.WriteString(imageTag(f.NewImage, f.NewName))
+	} else {
+		b.WriteString(imageTag(f.OldImage, f.OldName))
+	}
+	b.WriteString(`</div>`)
+	return b.String()
+}
+
+func imageTag(data []byte, name string) string {
+	ext := ""
+	if idx := strings.LastIndexByte(name, '.'); idx >= 0 {
+		ext = strings.ToLower(name[idx+1:])
+	}
+	mime := "image/png"
+	switch ext {
+	case "jpg", "jpeg":
+		mime = "image/jpeg"
+	case "gif":
+		mime = "image/gif"
+	case "webp":
+		mime = "image/webp"
+	case "svg":
+		mime = "image/svg+xml"
+	case "ico":
+		mime = "image/x-icon"
+	case "bmp":
+		mime = "image/bmp"
+	case "avif":
+		mime = "image/avif"
+	}
+	return `<img src="data:` + mime + `;base64,` + base64.StdEncoding.EncodeToString(data) + `" class="img-preview" alt="">`
+}
+
+func fileLang(name string) string {
+	ext := ""
+	if idx := strings.LastIndexByte(name, '.'); idx >= 0 {
+		ext = strings.ToLower(name[idx+1:])
+	}
+	langs := map[string]string{
+		"go": "go", "js": "javascript", "ts": "typescript",
+		"tsx": "typescript", "jsx": "javascript", "py": "python",
+		"rs": "rust", "rb": "ruby", "java": "java",
+		"html": "html", "css": "css", "scss": "scss",
+		"json": "json", "md": "markdown", "yaml": "yaml",
+		"yml": "yaml", "sh": "bash", "bash": "bash",
+		"sql": "sql", "c": "c", "cpp": "cpp", "cs": "csharp",
+		"php": "php", "swift": "swift", "kt": "kotlin",
+		"toml": "ini", "xml": "xml", "vue": "xml",
+	}
+	if l, ok := langs[ext]; ok {
+		return l
+	}
+	return ""
+}
+
 func fileIcon(name string) string {
 	ext := ""
 	if idx := strings.LastIndexByte(name, '.'); idx >= 0 {
@@ -173,6 +287,8 @@ func fileIcon(name string) string {
 		"html": "🌐", "css": "🎨", "scss": "🎨", "json": "📋",
 		"md":   "📝", "yaml": "⚙️", "yml": "⚙️", "toml": "⚙️",
 		"sh":   "💻", "sql": "🗄️", "proto": "📡",
+		"png":  "🖼️", "jpg": "🖼️", "jpeg": "🖼️", "gif": "🖼️",
+		"webp": "🖼️", "svg": "🖼️", "ico": "🖼️", "bmp": "🖼️",
 	}
 	if icon, ok := icons[ext]; ok {
 		return icon
@@ -225,6 +341,21 @@ body {
   flex-direction: column;
   overflow: hidden;
 }
+
+#branch-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--blue);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg);
+}
+.branch-icon { font-style: normal; font-size: 14px; }
+.branch-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 #sidebar-header {
   display: flex;
@@ -289,7 +420,23 @@ body {
   padding: 10px 14px;
   background: var(--bg-hover);
   border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
 }
+.diff-file-header:hover { background: var(--bg-hover); filter: brightness(1.1); }
+
+.diff-chevron {
+  font-size: 13px;
+  color: var(--subtle);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+  line-height: 1;
+}
+.diff-file.collapsed .diff-chevron   { transform: rotate(-90deg); }
+.diff-file.collapsed .diff-body,
+.diff-file.collapsed .img-section,
+.diff-file.collapsed .binary-notice { display: none; }
+.diff-file.collapsed                 { border-bottom: none; }
 
 .diff-file-icon { font-size: 14px; line-height: 1; }
 .diff-file-name { flex: 1; font-size: 13px; font-weight: 600; color: var(--blue); word-break: break-all; }
@@ -354,6 +501,22 @@ body {
   font-style: italic;
   padding: 4px 14px;
   opacity: .85;
+}
+
+/* ── Image preview ─────────────────────────────── */
+.img-section  { padding: 20px; }
+.img-compare  { display: flex; gap: 16px; }
+.img-panel    { flex: 1; min-width: 0; border-radius: 6px; overflow: hidden; }
+.img-panel-del { border: 1px solid var(--red); }
+.img-panel-add { border: 1px solid var(--green); }
+.img-label    { padding: 5px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.img-label-del { background: var(--red-bg);   color: var(--red); }
+.img-label-add { background: var(--green-bg); color: var(--green); }
+.img-preview  { display: block; max-width: 100%; height: auto; }
+.binary-notice {
+  padding: 20px 24px;
+  color: var(--subtle);
+  font-size: 13px;
 }
 
 /* ── Empty state ───────────────────────────────── */

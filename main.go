@@ -24,6 +24,7 @@ func main() {
 	}
 
 	files := diff.Parse(raw)
+	files = loadImages(files)
 
 	// Append untracked files only when no specific ref/path args are given.
 	if len(args) == 0 || (len(args) == 1 && (args[0] == "--staged" || args[0] == "--cached")) {
@@ -33,7 +34,8 @@ func main() {
 		}
 	}
 
-	page := render.HTML(files, title)
+	branch := currentBranch()
+	page := render.HTML(files, title, branch)
 
 	port, err := server.FreePort()
 	if err != nil {
@@ -88,20 +90,68 @@ func untrackedFiles() ([]diff.File, error) {
 		if p == "" {
 			continue
 		}
-		content, err := os.ReadFile(p)
-		if err != nil {
-			continue
-		}
 		f := diff.File{NewName: p}
-		for i, line := range strings.Split(string(content), "\n") {
-			f.Lines = append(f.Lines, diff.Line{
-				Type:    diff.LineAdd,
-				Content: line,
-				NewNum:  i + 1,
-			})
-			f.Added++
+		if isImageExt(p) {
+			data, err := os.ReadFile(p)
+			if err != nil {
+				continue
+			}
+			f.NewImage = data
+		} else {
+			content, err := os.ReadFile(p)
+			if err != nil {
+				continue
+			}
+			for i, line := range strings.Split(string(content), "\n") {
+				f.Lines = append(f.Lines, diff.Line{
+					Type:    diff.LineAdd,
+					Content: line,
+					NewNum:  i + 1,
+				})
+				f.Added++
+			}
 		}
 		files = append(files, f)
 	}
 	return files, nil
+}
+
+func loadImages(files []diff.File) []diff.File {
+	for i := range files {
+		f := &files[i]
+		if !f.IsBinary || !isImageExt(f.DisplayName()) {
+			continue
+		}
+		if f.NewName != "" {
+			if data, err := os.ReadFile(f.NewName); err == nil {
+				f.NewImage = data
+			}
+		}
+		if f.OldName != "" {
+			if data, err := exec.Command("git", "show", "HEAD:"+f.OldName).Output(); err == nil {
+				f.OldImage = data
+			}
+		}
+	}
+	return files
+}
+
+func isImageExt(name string) bool {
+	dot := strings.LastIndex(name, ".")
+	if dot < 0 {
+		return false
+	}
+	switch strings.ToLower(name[dot:]) {
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".bmp", ".avif":
+		return true
+	}
+	return false
+}
+
+func currentBranch() string {
+	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
