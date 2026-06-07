@@ -54,7 +54,7 @@ func sidebar(files []diff.File, branch string) string {
 		b.WriteString(`<span class="file-icon">`)
 		b.WriteString(fileIcon(name))
 		b.WriteString(`</span>`)
-		b.WriteString(`<span class="file-name" title="` + html.EscapeString(name) + `">` + html.EscapeString(shortName(name)) + `</span>`)
+		b.WriteString(`<span class="file-name" title="` + html.EscapeString(name) + `">` + html.EscapeString(name) + `</span>`)
 		b.WriteString(`<span class="file-stats">`)
 		if f.Added > 0 {
 			b.WriteString(`<span class="stat-add">+` + strconv.Itoa(f.Added) + `</span>`)
@@ -201,13 +201,6 @@ function jumpTo(id, el) {
 `
 }
 
-func shortName(path string) string {
-	parts := strings.Split(path, "/")
-	if len(parts) <= 3 {
-		return path
-	}
-	return ".../" + strings.Join(parts[len(parts)-2:], "/")
-}
 
 func imageSection(f diff.File) string {
 	var b strings.Builder
