@@ -1,4 +1,5 @@
-// Package server provides the one-shot HTTP server that serves the diff page.
+// Package server provides the long-lived HTTP server that serves the diff
+// page and pushes live updates over SSE.
 package server
 
 import (
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 )
 
@@ -22,14 +24,23 @@ func FreePort() (int, error) {
 	return port, nil
 }
 
-// Open serves htmlContent on the given port, opens the browser, and blocks
-// until Ctrl-C or SIGTERM is received.
-func Open(htmlContent string, port int) {
+// Open serves the HTML currently held in pageRef on /, the SSE stream on
+// /events, opens the browser, and blocks until Ctrl-C or SIGTERM is received.
+// pageRef must hold a string.
+func Open(pageRef *atomic.Value, port int, broker *Broker) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, htmlContent)
+		html, _ := pageRef.Load().(string)
+		fmt.Fprint(w, html)
 	})
+	if broker != nil {
+		mux.HandleFunc("/events", broker.HandleSSE)
+	}
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
@@ -42,6 +53,9 @@ func Open(htmlContent string, port int) {
 	go func() {
 		<-sig
 		fmt.Fprintln(os.Stderr, "\nbye.")
+		if broker != nil {
+			broker.Shutdown()
+		}
 		srv.Shutdown(context.Background()) //nolint:errcheck
 	}()
 

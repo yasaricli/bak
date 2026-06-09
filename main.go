@@ -1,14 +1,21 @@
 package main
 
 import (
+	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"sync/atomic"
+	"syscall"
+	"time"
 
 	"github.com/yasaricli/bak/internal/diff"
 	"github.com/yasaricli/bak/internal/render"
 	"github.com/yasaricli/bak/internal/server"
+	"github.com/yasaricli/bak/internal/watcher"
 )
 
 func main() {
@@ -16,26 +23,67 @@ func main() {
 
 	diffArgs := buildDiffArgs(args)
 	title := buildTitle(args)
+	live := isLiveMode(args)
 
-	raw, err := gitDiff(diffArgs)
+	buildPage := func() (string, error) {
+		raw, err := gitDiff(diffArgs)
+		if err != nil {
+			return "", err
+		}
+		files := diff.Parse(raw)
+		files = loadImages(files)
+		if live {
+			if u, err := untrackedFiles(); err == nil {
+				files = append(files, u...)
+			}
+		}
+		return render.HTML(files, title, currentBranch(), live), nil
+	}
+
+	initial, err := buildPage()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "git diff:", err)
 		os.Exit(1)
 	}
 
-	files := diff.Parse(raw)
-	files = loadImages(files)
+	var pageRef atomic.Value
+	pageRef.Store(initial)
+	broker := server.NewBroker()
 
-	// Append untracked files only when no specific ref/path args are given.
-	if len(args) == 0 || (len(args) == 1 && (args[0] == "--staged" || args[0] == "--cached")) {
-		untracked, err := untrackedFiles()
-		if err == nil {
-			files = append(files, untracked...)
+	if live {
+		root := repoRoot()
+		if root != "" {
+			w, err := watcher.New(root, 250*time.Millisecond)
+			if err == nil {
+				ctx, cancel := context.WithCancel(context.Background())
+				go w.Start(ctx)
+				go func() {
+					lastHash := sha256.Sum256([]byte(initial))
+					for range w.Events() {
+						html, err := buildPage()
+						if err != nil {
+							continue
+						}
+						h := sha256.Sum256([]byte(html))
+						if h == lastHash {
+							continue
+						}
+						lastHash = h
+						pageRef.Store(html)
+						broker.Broadcast(html)
+					}
+				}()
+				go func() {
+					sig := make(chan os.Signal, 1)
+					signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+					<-sig
+					cancel()
+				}()
+			} else {
+				fmt.Fprintln(os.Stderr, "watcher:", err)
+			}
 		}
 	}
-
-	branch := currentBranch()
-	page := render.HTML(files, title, branch)
 
 	port, err := server.FreePort()
 	if err != nil {
@@ -43,7 +91,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	server.Open(page, port)
+	server.Open(&pageRef, port, broker)
+}
+
+func isLiveMode(args []string) bool {
+	if len(args) == 0 {
+		return true
+	}
+	if len(args) == 1 && (args[0] == "--staged" || args[0] == "--cached") {
+		return true
+	}
+	return false
+}
+
+func repoRoot() string {
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func buildDiffArgs(args []string) []string {

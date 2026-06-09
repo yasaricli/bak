@@ -10,7 +10,7 @@ import (
 	"github.com/yasaricli/bak/internal/diff"
 )
 
-func HTML(files []diff.File, title, branch string) string {
+func HTML(files []diff.File, title, branch string, live bool) string {
 	totalAdd, totalDel := 0, 0
 	for _, f := range files {
 		totalAdd += f.Added
@@ -21,10 +21,10 @@ func HTML(files []diff.File, title, branch string) string {
 	b.WriteString(header(title))
 	b.WriteString(sidebar(files, branch))
 	b.WriteString(`<div id="right">`)
-	b.WriteString(toolbar(len(files), totalAdd, totalDel))
+	b.WriteString(toolbar(len(files), totalAdd, totalDel, live))
 	b.WriteString(mainContent(files))
 	b.WriteString(`</div>`)
-	b.WriteString(footer())
+	b.WriteString(footer(live))
 	return b.String()
 }
 
@@ -44,10 +44,13 @@ func header(title string) string {
 `
 }
 
-func toolbar(nFiles, totalAdd, totalDel int) string {
+func toolbar(nFiles, totalAdd, totalDel int, live bool) string {
 	var b strings.Builder
 	b.WriteString(`<div id="toolbar">`)
 	b.WriteString(`<div id="toolbar-stats">`)
+	if live {
+		b.WriteString(`<span id="live-indicator" class="live-on" title="Live mode — auto-refresh on file changes">● Live</span>`)
+	}
 	if totalAdd > 0 {
 		b.WriteString(`<span class="ts-add">+` + strconv.Itoa(totalAdd) + `</span>`)
 	}
@@ -175,7 +178,11 @@ func mainContent(files []diff.File) string {
 	return b.String()
 }
 
-func footer() string {
+func footer(live bool) string {
+	liveFlag := "false"
+	if live {
+		liveFlag = "true"
+	}
 	return `<div id="search-bar">
   <input id="search-input" placeholder="Search…" autocomplete="off" spellcheck="false">
   <span id="search-count"></span>
@@ -202,6 +209,7 @@ func footer() string {
 <div id="toast"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script>
+window.__BAK_LIVE__ = ` + liveFlag + `;
 /* ── Collapse file ──────────────────────────────── */
 function toggleFile(header) {
   header.closest('.diff-file').classList.toggle('collapsed');
@@ -230,23 +238,30 @@ function jumpTo(id, el) {
 }
 
 /* ── Scroll spy ─────────────────────────────────── */
-(function () {
+var _scrollSpyBound = false;
+function bindScrollSpy() {
   var main = document.getElementById('main');
-  var items = document.querySelectorAll('.diff-file');
-  main.addEventListener('scroll', function () {
-    var top = main.scrollTop + 100;
-    var active = 0;
-    items.forEach(function (el, i) { if (el.offsetTop <= top) active = i; });
-    document.querySelectorAll('.file-item').forEach(function (el, i) {
-      el.classList.toggle('active', i === active);
+  if (!main) return;
+  if (!_scrollSpyBound) {
+    main.addEventListener('scroll', function () {
+      var items = document.querySelectorAll('.diff-file');
+      if (!items.length) return;
+      var top = main.scrollTop + 100;
+      var active = 0;
+      items.forEach(function (el, i) { if (el.offsetTop <= top) active = i; });
+      document.querySelectorAll('.file-item').forEach(function (el, i) {
+        el.classList.toggle('active', i === active);
+      });
+      var nav = document.getElementById('nav-' + active);
+      if (nav) nav.scrollIntoView({ block: 'nearest' });
     });
-    var nav = document.getElementById('nav-' + active);
-    if (nav) nav.scrollIntoView({ block: 'nearest' });
-  });
-})();
+    _scrollSpyBound = true;
+  }
+}
+bindScrollSpy();
 
 /* ── Syntax highlight ───────────────────────────── */
-(function () {
+function runHighlight() {
   document.querySelectorAll('.diff-file[data-lang]').forEach(function (section) {
     var lang = section.dataset.lang;
     if (!lang) return;
@@ -262,7 +277,8 @@ function jumpTo(id, el) {
       lc.innerHTML = sign + (hLines[i] !== undefined ? hLines[i] : '');
     });
   });
-})();
+}
+runHighlight();
 
 /* ── Theme ──────────────────────────────────────── */
 function applyTheme(t) {
@@ -420,7 +436,7 @@ function permalink(td, fileIdx, lineNum) {
   navigator.clipboard.writeText(location.href).catch(function(){});
   showToast('Link copied!');
 }
-(function() {
+function applyPermalink() {
   var m = location.hash.match(/#file-(\d+)-L(\d+)/);
   if (!m) return;
   var section = document.getElementById('file-' + m[1]);
@@ -436,7 +452,8 @@ function permalink(td, fileIdx, lineNum) {
       }
     }
   }, 300);
-})();
+}
+applyPermalink();
 
 /* ── Export ─────────────────────────────────────── */
 function exportHTML() {
@@ -493,6 +510,117 @@ document.addEventListener('keydown', function(e) {
       closeSearch(); break;
   }
 });
+
+/* ── Live refresh (SSE) ─────────────────────────── */
+function _bakSnapshot() {
+  var main = document.getElementById('main');
+  var searchBar = document.getElementById('search-bar');
+  var searchInput = document.getElementById('search-input');
+  var filterInput = document.getElementById('filter-input');
+  var collapsedFiles = {};
+  document.querySelectorAll('.diff-file.collapsed').forEach(function(sec) {
+    var n = sec.querySelector('.diff-file-name');
+    if (n) collapsedFiles[n.textContent] = true;
+  });
+  var collapsedHunks = {};
+  document.querySelectorAll('.diff-file').forEach(function(sec) {
+    var n = sec.querySelector('.diff-file-name');
+    var path = n ? n.textContent : '';
+    sec.querySelectorAll('tr.line-hunk.hunk-collapsed').forEach(function(row) {
+      var td = row.querySelector('td');
+      if (td) collapsedHunks[path + '::' + td.textContent.trim()] = true;
+    });
+  });
+  return {
+    scrollTop:      main ? main.scrollTop : 0,
+    searchQ:        searchInput ? searchInput.value : '',
+    searchOpen:     searchBar ? searchBar.classList.contains('open') : false,
+    filterQ:        filterInput ? filterInput.value : '',
+    split:          _split,
+    collapsedFiles: collapsedFiles,
+    collapsedHunks: collapsedHunks,
+    hash:           location.hash,
+  };
+}
+
+function _bakReapplyCollapsed(snap) {
+  document.querySelectorAll('.diff-file').forEach(function(sec) {
+    var n = sec.querySelector('.diff-file-name');
+    if (n && snap.collapsedFiles[n.textContent]) sec.classList.add('collapsed');
+  });
+  document.querySelectorAll('.diff-file').forEach(function(sec) {
+    var n = sec.querySelector('.diff-file-name');
+    var path = n ? n.textContent : '';
+    sec.querySelectorAll('tr.line-hunk').forEach(function(row) {
+      var td = row.querySelector('td');
+      if (!td) return;
+      if (snap.collapsedHunks[path + '::' + td.textContent.trim()]) toggleHunk(row);
+    });
+  });
+}
+
+function _bakApplyRefresh(html) {
+  var snap = _bakSnapshot();
+  var doc;
+  try { doc = new DOMParser().parseFromString(html, 'text/html'); } catch (e) { return; }
+  var newFileList = doc.getElementById('file-list');
+  var newMain = doc.getElementById('main');
+  var newToolbarStats = doc.getElementById('toolbar-stats');
+  var newBranchName = doc.querySelector('#branch-bar .branch-name');
+  if (!newFileList || !newMain) return;
+  document.getElementById('file-list').innerHTML = newFileList.innerHTML;
+  document.getElementById('main').innerHTML = newMain.innerHTML;
+  if (newToolbarStats) {
+    var oldStats = document.getElementById('toolbar-stats');
+    // Preserve live indicator: extract it and re-insert after swap.
+    var live = oldStats ? oldStats.querySelector('#live-indicator') : null;
+    if (oldStats) oldStats.innerHTML = newToolbarStats.innerHTML;
+    if (live && oldStats && !oldStats.querySelector('#live-indicator')) oldStats.insertBefore(live, oldStats.firstChild);
+  }
+  var existingBranch = document.querySelector('#branch-bar .branch-name');
+  if (newBranchName && existingBranch) existingBranch.textContent = newBranchName.textContent;
+  runHighlight();
+  _bakReapplyCollapsed(snap);
+  _splitBuilt = {};
+  if (snap.split) { _split = false; toggleView(); }
+  if (snap.searchQ) {
+    document.getElementById('search-input').value = snap.searchQ;
+    if (snap.searchOpen) openSearch();
+    doSearch(snap.searchQ);
+  }
+  if (snap.filterQ) {
+    var fi = document.getElementById('filter-input');
+    if (fi) { fi.value = snap.filterQ; filterFiles(snap.filterQ); }
+  }
+  var mainEl = document.getElementById('main');
+  if (mainEl) mainEl.scrollTop = snap.scrollTop;
+  if (snap.hash) { history.replaceState(null, '', snap.hash); applyPermalink(); }
+  bindScrollSpy();
+}
+
+function _bakSetLive(state) {
+  var el = document.getElementById('live-indicator');
+  if (!el) return;
+  el.textContent = state === 'on' ? '● Live' : '○ Disconnected';
+  el.className = state === 'on' ? 'live-on' : 'live-off';
+}
+
+if (window.__BAK_LIVE__) {
+  var _bakBackoff = 500;
+  (function _bakConnect() {
+    var es = new EventSource('/events');
+    es.onopen = function() { _bakBackoff = 500; _bakSetLive('on'); };
+    es.onmessage = function(ev) {
+      try { _bakApplyRefresh(JSON.parse(ev.data).html); } catch (e) {}
+    };
+    es.onerror = function() {
+      _bakSetLive('off');
+      es.close();
+      setTimeout(_bakConnect, _bakBackoff);
+      _bakBackoff = Math.min(_bakBackoff * 2, 10000);
+    };
+  })();
+}
 </script>
 </body>
 </html>
@@ -991,6 +1119,18 @@ kbd {
 .empty-icon  { font-size: 48px; }
 .empty-title { font-size: 18px; font-weight: 600; color: var(--text); }
 .empty-sub   { font-size: 13px; }
+
+/* Live indicator */
+#live-indicator {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-right: 4px;
+  letter-spacing: 0.2px;
+}
+#live-indicator.live-on  { color: var(--green); background: rgba(63,185,80,0.12); }
+#live-indicator.live-off { color: var(--subtle); background: rgba(139,148,158,0.12); }
 
 /* Scrollbar */
 ::-webkit-scrollbar              { width: 8px; height: 8px; }

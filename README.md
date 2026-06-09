@@ -59,8 +59,20 @@ go install .
 2. Parses the unified diff output
 3. Starts a local HTTP server on a random available port
 4. Opens the browser automatically (`open` on macOS)
-5. Serves a single self-contained HTML page
-6. Shuts down once the browser loads the page (or on Ctrl-C)
+5. In live mode, watches the repo and pushes updates over SSE
+6. Runs until Ctrl-C
+
+## Live mode
+
+When you run `bak` with no arguments or `bak --staged`, the page auto-refreshes
+as you edit files — no need to re-run the command.
+
+- fsnotify watcher reacts to writes with ~250 ms debounce
+- 1.5 s `git status` / `git diff` polling fallback catches anything missed
+- Updates are pushed to the browser over Server-Sent Events
+- Toolbar shows a ● Live indicator; set `BAK_DEBUG=1` for watcher logs
+- State preserved across refreshes: scroll, theme, split view, search, file filter, permalink
+- Off for fixed refs like `bak HEAD~1` (the diff can't change)
 
 ## UI
 
@@ -70,20 +82,24 @@ go install .
 - Unified diff with old/new line numbers
 - Added lines in green, removed lines in red
 - File type icons
+- Auto-refreshes on file changes in live mode
 - Zero external dependencies — pure HTML/CSS/JS embedded in the binary
 
 ## Project structure
 
 ```
 bak/
-├── main.go               # CLI entry point, arg parsing
+├── main.go               # CLI entry, watcher dispatcher
 └── internal/
     ├── diff/
     │   └── diff.go       # unified diff parser
     ├── render/
-    │   └── render.go     # HTML/CSS/JS page builder
-    └── server/
-        └── server.go     # one-shot HTTP server
+    │   └── render.go     # HTML/CSS/JS page builder (SSE client embedded)
+    ├── server/
+    │   ├── server.go     # long-lived HTTP server
+    │   └── sse.go        # SSE broker
+    └── watcher/
+        └── watcher.go    # fsnotify + polling fallback
 ```
 
 ## License
