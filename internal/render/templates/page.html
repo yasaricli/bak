@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<link id="hljs-css" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+{{.Style}}
+</head>
+<body>
+
+<nav id="sidebar">
+  {{if .Branch}}
+  <div id="branch-bar">
+    <span class="branch-icon">⎇</span>
+    <span class="branch-name">{{.Branch}}</span>
+  </div>
+  {{end}}
+
+  <div id="sidebar-header">
+    <span>Changed Files</span>
+    <span class="file-count">{{len .Files}}</span>
+  </div>
+
+  <div id="sidebar-filter">
+    <input id="filter-input" placeholder="Filter files…" oninput="filterFiles(this.value)" autocomplete="off" spellcheck="false">
+  </div>
+
+  <div id="file-list">
+    {{range .Files}}
+    <div class="file-item" onclick="jumpTo('file-{{.Index}}',this)" id="nav-{{.Index}}">
+      <span class="file-icon">{{.Icon}}</span>
+      <span class="file-name" title="{{.Name}}">{{.Name}}</span>
+      <span class="file-stats">
+        {{if gt .Added 0}}<span class="stat-add">+{{.Added}}</span>{{end}}
+        {{if gt .Removed 0}}<span class="stat-del">−{{.Removed}}</span>{{end}}
+      </span>
+    </div>
+    {{end}}
+  </div>
+
+  <div id="sidebar-footer">
+    <div id="live-indicator" title="Watching for changes">
+      <span id="live-dot"></span>
+      <span id="live-label">Live</span>
+    </div>
+    <a href="https://github.com/yasaricli/bak" target="_blank" rel="noopener noreferrer" id="github-btn">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+      </svg>
+      <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" class="star-svg">
+        <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/>
+      </svg>
+      <span>Star</span>
+    </a>
+  </div>
+</nav>
+
+<div id="right">
+  <div id="toolbar">
+    <div id="toolbar-stats">
+      {{if gt .TotalAdd 0}}<span class="ts-add">+{{.TotalAdd}}</span>{{end}}
+      {{if gt .TotalDel 0}}<span class="ts-del">−{{.TotalDel}}</span>{{end}}
+      <span class="ts-files">{{len .Files}} files</span>
+    </div>
+    <div id="toolbar-actions">
+      <button class="tb-btn" onclick="openSearch()" title="Search (/)">Search</button>
+      <button class="tb-btn" id="btn-view" onclick="toggleView()" title="Toggle split view (s)">Split</button>
+      <button class="tb-btn" id="btn-theme" onclick="toggleTheme()" title="Toggle theme (t)">Light</button>
+      <button class="tb-btn" onclick="changeFontSize(-1)" title="Decrease font size">A−</button>
+      <button class="tb-btn" onclick="changeFontSize(1)" title="Increase font size">A+</button>
+      <button class="tb-btn" onclick="exportHTML()" title="Export as HTML (e)">Export</button>
+      <button class="tb-btn" onclick="showHelp()" title="Keyboard shortcuts (?)">?</button>
+    </div>
+  </div>
+
+  <main id="main">
+    {{if not .Files}}
+    <div class="empty-state">
+      <div class="empty-icon">✓</div>
+      <div class="empty-title">No changes</div>
+      <div class="empty-sub">Working tree is clean.</div>
+    </div>
+    {{end}}
+
+    {{range .Files}}
+    <section class="diff-file" id="file-{{.Index}}" data-lang="{{.Lang}}">
+
+      <div class="diff-file-header" onclick="toggleFile(this)">
+        <span class="diff-chevron">▾</span>
+        <span class="diff-file-icon">{{.Icon}}</span>
+        <span class="diff-file-name">{{.Name}}</span>
+        <span class="diff-file-stats">
+          {{if gt .Added 0}}<span class="sa">+{{.Added}}</span>{{end}}
+          {{if gt .Removed 0}}<span class="sd">−{{.Removed}}</span>{{end}}
+        </span>
+      </div>
+
+      {{if or .HasOldImage .HasNewImage}}
+      <div class="img-section">
+        {{if and .HasOldImage .HasNewImage}}
+        <div class="img-compare">
+          <div class="img-panel img-panel-del">
+            <div class="img-label img-label-del">Before</div>
+            <img src="{{.OldImageSrc}}" class="img-preview" alt="">
+          </div>
+          <div class="img-panel img-panel-add">
+            <div class="img-label img-label-add">After</div>
+            <img src="{{.NewImageSrc}}" class="img-preview" alt="">
+          </div>
+        </div>
+        {{else if .HasNewImage}}
+        <img src="{{.NewImageSrc}}" class="img-preview" alt="">
+        {{else}}
+        <img src="{{.OldImageSrc}}" class="img-preview" alt="">
+        {{end}}
+      </div>
+      {{else if .IsBinary}}
+      <div class="binary-notice">⊘ Binary file — no preview available</div>
+      {{else}}
+      <div class="diff-body">
+        <table class="diff-table">
+          {{range .Lines}}
+          {{if eq .Type "hunk"}}
+          <tr class="line-hunk" onclick="toggleHunk(this)">
+            <td colspan="3"><span class="hunk-chevron">▾</span>{{.Content}}</td>
+          </tr>
+          {{else if eq .Type "add"}}
+          <tr class="line-add">
+            <td class="ln"></td>
+            <td class="ln" onclick="permalink(this,{{.FileIdx}},{{.NewNum}})">{{.NewNum}}</td>
+            <td class="lc"><span class="sign">+</span>{{.Content}}</td>
+          </tr>
+          {{else if eq .Type "del"}}
+          <tr class="line-del">
+            <td class="ln" onclick="permalink(this,{{.FileIdx}},{{.OldNum}})">{{.OldNum}}</td>
+            <td class="ln"></td>
+            <td class="lc"><span class="sign">−</span>{{.Content}}</td>
+          </tr>
+          {{else}}
+          <tr class="line-ctx">
+            <td class="ln">{{.OldNum}}</td>
+            <td class="ln" onclick="permalink(this,{{.FileIdx}},{{.NewNum}})">{{.NewNum}}</td>
+            <td class="lc"><span class="sign"> </span>{{.Content}}</td>
+          </tr>
+          {{end}}
+          {{end}}
+        </table>
+      </div>
+      {{end}}
+
+    </section>
+    {{end}}
+  </main>
+</div>
+
+<div id="search-bar">
+  <input id="search-input" placeholder="Search…" autocomplete="off" spellcheck="false">
+  <span id="search-count"></span>
+  <button class="sb-btn" onclick="searchNav(-1)" title="Previous">↑</button>
+  <button class="sb-btn" onclick="searchNav(1)" title="Next">↓</button>
+  <button class="sb-btn" onclick="closeSearch()">✕</button>
+</div>
+
+<div id="help-modal" hidden onclick="if(event.target===this)hideHelp()">
+  <div id="help-box">
+    <div id="help-title">Keyboard Shortcuts</div>
+    <table id="help-table">
+      <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>Next / prev hunk</td></tr>
+      <tr><td><kbd>n</kbd> / <kbd>p</kbd></td><td>Next / prev file</td></tr>
+      <tr><td><kbd>/</kbd></td><td>Open search</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Close search / modal</td></tr>
+      <tr><td><kbd>t</kbd></td><td>Toggle theme</td></tr>
+      <tr><td><kbd>s</kbd></td><td>Toggle split view</td></tr>
+      <tr><td><kbd>e</kbd></td><td>Export HTML</td></tr>
+      <tr><td><kbd>?</kbd></td><td>Show this help</td></tr>
+    </table>
+    <button class="tb-btn" onclick="hideHelp()">Close</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+{{.Script}}
+
+</body>
+</html>
