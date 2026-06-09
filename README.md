@@ -2,7 +2,7 @@
 
 A local git diff viewer that opens a GitHub-style UI in the browser.
 
-![dark theme diff viewer with sidebar](logo.png)
+<p align="center"><img src="logo.png" width="300" /></p>
 
 ## Install
 
