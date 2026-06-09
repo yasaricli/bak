@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,31 +12,31 @@ import (
 	"github.com/yasaricli/bak/internal/server"
 )
 
+//go:embed logo.png
+var logoData []byte
+
 func main() {
 	args := os.Args[1:]
-
 	diffArgs := buildDiffArgs(args)
 	title := buildTitle(args)
+	watchWorking := len(args) == 0 || (len(args) == 1 && (args[0] == "--staged" || args[0] == "--cached"))
 
-	raw, err := gitDiff(diffArgs)
-	if err != nil {
+	// Validate git repo on startup.
+	if _, err := gitDiff(diffArgs); err != nil {
 		fmt.Fprintln(os.Stderr, "git diff:", err)
 		os.Exit(1)
 	}
 
-	files := diff.Parse(raw)
-	files = loadImages(files)
-
-	// Append untracked files only when no specific ref/path args are given.
-	if len(args) == 0 || (len(args) == 1 && (args[0] == "--staged" || args[0] == "--cached")) {
-		untracked, err := untrackedFiles()
-		if err == nil {
+	buildPage := func() string {
+		raw, _ := gitDiff(diffArgs)
+		files := diff.Parse(raw)
+		files = loadImages(files)
+		if watchWorking {
+			untracked, _ := untrackedFiles()
 			files = append(files, untracked...)
 		}
+		return render.HTML(files, title, currentBranch(), logoData)
 	}
-
-	branch := currentBranch()
-	page := render.HTML(files, title, branch)
 
 	port, err := server.FreePort()
 	if err != nil {
@@ -43,7 +44,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	server.Open(page, port)
+	server.Serve(buildPage, port)
 }
 
 func buildDiffArgs(args []string) []string {

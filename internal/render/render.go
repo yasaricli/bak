@@ -10,7 +10,9 @@ import (
 	"github.com/yasaricli/bak/internal/diff"
 )
 
-func HTML(files []diff.File, title, branch string) string {
+const githubRepo = "https://github.com/yasaricli/bak"
+
+func HTML(files []diff.File, title, branch string, logoData []byte) string {
 	totalAdd, totalDel := 0, 0
 	for _, f := range files {
 		totalAdd += f.Added
@@ -18,17 +20,20 @@ func HTML(files []diff.File, title, branch string) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(header(title))
+	b.WriteString(htmlHead(title))
+	b.WriteString(`<body>`)
+	b.WriteString(appHeader(logoData))
+	b.WriteString(`<div id="app-body">`)
 	b.WriteString(sidebar(files, branch))
 	b.WriteString(`<div id="right">`)
 	b.WriteString(toolbar(len(files), totalAdd, totalDel))
 	b.WriteString(mainContent(files))
-	b.WriteString(`</div>`)
+	b.WriteString(`</div></div>`)
 	b.WriteString(footer())
 	return b.String()
 }
 
-func header(title string) string {
+func htmlHead(title string) string {
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -40,8 +45,32 @@ func header(title string) string {
 ` + css() + `
 </style>
 </head>
-<body>
 `
+}
+
+func appHeader(logoData []byte) string {
+	var logoEl string
+	if len(logoData) > 0 {
+		src := "data:image/png;base64," + base64.StdEncoding.EncodeToString(logoData)
+		logoEl = `<img src="` + src + `" id="app-logo-img" alt="bak" width="28" height="28">`
+	}
+	return `<header id="app-header">` +
+		`<div id="app-logo">` + logoEl + `<span id="app-name">bak</span></div>` +
+		`<div id="app-header-right">` +
+		`<div id="live-indicator" title="Watching for changes">` +
+		`<span id="live-dot"></span><span id="live-label">Live</span>` +
+		`</div>` +
+		`<a href="` + githubRepo + `" target="_blank" rel="noopener noreferrer" id="github-btn">` +
+		`<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">` +
+		`<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>` +
+		`</svg>` +
+		`<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" class="star-svg">` +
+		`<path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/>` +
+		`</svg>` +
+		`<span>Star</span>` +
+		`</a>` +
+		`</div>` +
+		`</header>`
 }
 
 func toolbar(nFiles, totalAdd, totalDel int) string {
@@ -117,7 +146,6 @@ func mainContent(files []diff.File) string {
 		lang := fileLang(name)
 		b.WriteString(`<section class="diff-file" id="file-` + strconv.Itoa(i) + `" data-lang="` + lang + `">`)
 
-		// File header
 		b.WriteString(`<div class="diff-file-header" onclick="toggleFile(this)">`)
 		b.WriteString(`<span class="diff-chevron">▾</span>`)
 		b.WriteString(`<span class="diff-file-icon">` + fileIcon(name) + `</span>`)
@@ -131,7 +159,6 @@ func mainContent(files []diff.File) string {
 		}
 		b.WriteString(`</span></div>`)
 
-		// Body
 		switch {
 		case f.OldImage != nil || f.NewImage != nil:
 			b.WriteString(imageSection(f))
@@ -202,6 +229,23 @@ func footer() string {
 <div id="toast"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script>
+/* ── Live reload (SSE) ──────────────────────────── */
+(function() {
+  var dot = document.getElementById('live-dot');
+  function setConnected(on) {
+    if (!dot) return;
+    dot.className = on ? 'connected' : 'disconnected';
+  }
+  try {
+    var es = new EventSource('/events');
+    es.addEventListener('open', function() { setConnected(true); });
+    es.onmessage = function(e) {
+      if (e.data === 'update') location.reload();
+    };
+    es.onerror = function() { setConnected(false); };
+  } catch(e) {}
+})();
+
 /* ── Collapse file ──────────────────────────────── */
 function toggleFile(header) {
   header.closest('.diff-file').classList.toggle('collapsed');
@@ -465,7 +509,6 @@ document.addEventListener('keydown', function(e) {
   if (e.target.tagName === 'INPUT') return;
   var hunks = Array.from(document.querySelectorAll('.line-hunk:not([style*="display: none"])'));
   var files = Array.from(document.querySelectorAll('.diff-file'));
-  var main  = document.getElementById('main');
   switch(e.key) {
     case 'j': {
       var cur = hunks.findIndex(function(h) { return h.getBoundingClientRect().top > 10; });
@@ -571,19 +614,94 @@ func fileIcon(name string) string {
 	if idx := strings.LastIndexByte(name, '.'); idx >= 0 {
 		ext = strings.ToLower(name[idx+1:])
 	}
-	icons := map[string]string{
-		"go": "🔵", "js": "🟡", "ts": "🔷", "tsx": "🔷", "jsx": "🟡",
-		"py": "🐍", "rs": "🦀", "rb": "💎", "java": "☕",
-		"html": "🌐", "css": "🎨", "scss": "🎨", "json": "📋",
-		"md": "📝", "yaml": "⚙️", "yml": "⚙️", "toml": "⚙️",
-		"sh": "💻", "sql": "🗄️", "proto": "📡",
-		"png": "🖼️", "jpg": "🖼️", "jpeg": "🖼️", "gif": "🖼️",
-		"webp": "🖼️", "svg": "🖼️", "ico": "🖼️", "bmp": "🖼️",
+	switch ext {
+	case "go":
+		return badge("#00ACD7", "#fff", "go")
+	case "js":
+		return badge("#F7DF1E", "#1a1a1a", "JS")
+	case "ts":
+		return badge("#3178C6", "#fff", "TS")
+	case "tsx":
+		return badge("#3178C6", "#fff", "TS")
+	case "jsx":
+		return badge("#61DAFB", "#1a1a1a", "JX")
+	case "py":
+		return badge("#3776AB", "#fff", "Py")
+	case "rs":
+		return badge("#CE422B", "#fff", "Rs")
+	case "rb":
+		return badge("#CC342D", "#fff", "Rb")
+	case "java":
+		return badge("#B07219", "#fff", "Jv")
+	case "html":
+		return badge("#E34F26", "#fff", "HT")
+	case "css":
+		return badge("#1572B6", "#fff", "CS")
+	case "scss":
+		return badge("#CC6699", "#fff", "SC")
+	case "json":
+		return badge("#4a4a4a", "#F7DF1E", "{}")
+	case "md":
+		return badge("#083FA1", "#fff", "MD")
+	case "yaml", "yml":
+		return badge("#CB171E", "#fff", "YL")
+	case "toml":
+		return badge("#9C4221", "#fff", "TL")
+	case "sh", "bash":
+		return badge("#4EAA25", "#fff", "SH")
+	case "sql":
+		return badge("#336791", "#fff", "SQ")
+	case "c":
+		return badge("#555555", "#fff", "C")
+	case "cpp":
+		return badge("#f34b7d", "#fff", "C+")
+	case "cs":
+		return badge("#239120", "#fff", "C#")
+	case "php":
+		return badge("#777BB4", "#fff", "PH")
+	case "swift":
+		return badge("#FA7343", "#fff", "Sw")
+	case "kt":
+		return badge("#7F52FF", "#fff", "Kt")
+	case "vue":
+		return badge("#4FC08D", "#fff", "Vu")
+	case "xml":
+		return badge("#0060AC", "#fff", "XM")
+	case "proto":
+		return badge("#4285F4", "#fff", "Pb")
+	case "png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "avif":
+		return iconImage()
 	}
-	if icon, ok := icons[ext]; ok {
-		return icon
+	return iconFile()
+}
+
+func badge(bg, fg, text string) string {
+	fs := "7.5"
+	if len(text) == 1 {
+		fs = "9"
 	}
-	return "📄"
+	return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">` +
+		`<rect width="16" height="16" rx="3" fill="` + bg + `"/>` +
+		`<text x="8" y="8" text-anchor="middle" dominant-baseline="central" font-size="` + fs + `" font-weight="700" fill="` + fg + `" font-family="ui-sans-serif,system-ui,sans-serif">` + html.EscapeString(text) + `</text>` +
+		`</svg>`
+}
+
+func iconImage() string {
+	return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">` +
+		`<rect x="0.5" y="2.5" width="15" height="11" rx="1.5" fill="#1a7f37" stroke="#2ea043" stroke-width="0.5"/>` +
+		`<circle cx="4.5" cy="5.5" r="1.5" fill="#aff5b4"/>` +
+		`<path d="M0.5 10.5l3.5-3.5 2.5 2.5 2-2 5 4.5H0.5z" fill="#aff5b4" opacity="0.75"/>` +
+		`</svg>`
+}
+
+func iconFile() string {
+	return `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">` +
+		`<path d="M3.5 1h6.586L13.5 4.414V15H3.5V1z" fill="#30363d" stroke="#484f58" stroke-width="0.5"/>` +
+		`<path d="M10 1v3.5H13.5" fill="none" stroke="#484f58" stroke-width="0.5"/>` +
+		`<line x1="5.5" y1="7" x2="10.5" y2="7" stroke="#8b949e" stroke-width="0.75"/>` +
+		`<line x1="5.5" y1="9.5" x2="10.5" y2="9.5" stroke="#8b949e" stroke-width="0.75"/>` +
+		`<line x1="5.5" y1="12" x2="8.5" y2="12" stroke="#8b949e" stroke-width="0.75"/>` +
+		`</svg>`
 }
 
 func css() string {
@@ -640,11 +758,111 @@ body {
   background: var(--bg);
   color: var(--text);
   display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
 }
 
-/* ── Sidebar ───────────────────────────────────── */
+/* ── App header ─────────────────────────────────── */
+#app-header {
+  height: 46px;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+#app-logo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+#app-logo-img {
+  border-radius: 6px;
+  display: block;
+}
+
+#app-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+#app-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#live-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--subtle);
+  user-select: none;
+}
+
+#live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: background 0.4s;
+}
+
+#live-dot.connected {
+  background: var(--green);
+  animation: live-pulse 2.4s ease-in-out infinite;
+}
+
+#live-dot.disconnected {
+  background: var(--red);
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+#github-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--subtle);
+  text-decoration: none;
+  font-size: 12px;
+  font-family: var(--font);
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+
+#github-btn:hover {
+  background: var(--border);
+  border-color: var(--subtle);
+  color: var(--text);
+}
+
+.star-svg { color: var(--yellow); }
+
+/* ── App body ───────────────────────────────────── */
+#app-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── Sidebar ────────────────────────────────────── */
 #sidebar {
   width: 272px;
   min-width: 272px;
@@ -714,7 +932,7 @@ body {
 .file-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   padding: 5px 14px;
   cursor: pointer;
   font-size: 12px;
@@ -724,7 +942,7 @@ body {
 .file-item:hover  { background: var(--bg-hover); }
 .file-item.active { background: var(--bg-hover); border-left-color: var(--blue); }
 
-.file-icon  { font-size: 13px; flex-shrink: 0; line-height: 1; }
+.file-icon  { flex-shrink: 0; display: flex; align-items: center; }
 .file-name  { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .file-stats { display: flex; gap: 5px; flex-shrink: 0; font-weight: 600; }
 .stat-add   { color: var(--green); }
@@ -804,7 +1022,7 @@ body {
 .diff-file.collapsed .binary-notice   { display: none; }
 .diff-file.collapsed                  { border-bottom: none; }
 
-.diff-file-icon  { font-size: 14px; line-height: 1; }
+.diff-file-icon  { display: flex; align-items: center; flex-shrink: 0; }
 .diff-file-name  { flex: 1; font-size: 13px; font-weight: 600; color: var(--blue); word-break: break-all; }
 .diff-file-stats { display: flex; gap: 8px; font-size: 12px; font-weight: 600; flex-shrink: 0; }
 .diff-file-stats .sa { color: var(--green); }
@@ -891,7 +1109,7 @@ body {
 #search-bar {
   display: none;
   position: fixed;
-  top: 48px;
+  top: 54px;
   right: 20px;
   background: var(--bg-alt);
   border: 1px solid var(--border);
