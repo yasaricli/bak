@@ -22,13 +22,11 @@ func HTML(files []diff.File, title, branch string, logoData []byte) string {
 	var b strings.Builder
 	b.WriteString(htmlHead(title))
 	b.WriteString(`<body>`)
-	b.WriteString(appHeader(logoData))
-	b.WriteString(`<div id="app-body">`)
 	b.WriteString(sidebar(files, branch))
 	b.WriteString(`<div id="right">`)
 	b.WriteString(toolbar(len(files), totalAdd, totalDel))
 	b.WriteString(mainContent(files))
-	b.WriteString(`</div></div>`)
+	b.WriteString(`</div>`)
 	b.WriteString(footer())
 	return b.String()
 }
@@ -48,29 +46,22 @@ func htmlHead(title string) string {
 `
 }
 
-func appHeader(logoData []byte) string {
-	var logoEl string
-	if len(logoData) > 0 {
-		src := "data:image/png;base64," + base64.StdEncoding.EncodeToString(logoData)
-		logoEl = `<img src="` + src + `" id="app-logo-img" alt="bak" width="28" height="28">`
-	}
-	return `<header id="app-header">` +
-		`<div id="app-logo">` + logoEl + `<span id="app-name">bak</span></div>` +
-		`<div id="app-header-right">` +
+func sidebarFooter() string {
+	return `<div id="sidebar-footer">` +
 		`<div id="live-indicator" title="Watching for changes">` +
-		`<span id="live-dot"></span><span id="live-label">Live</span>` +
+		`<span id="live-dot"></span>` +
+		`<span id="live-label">Live</span>` +
 		`</div>` +
 		`<a href="` + githubRepo + `" target="_blank" rel="noopener noreferrer" id="github-btn">` +
-		`<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">` +
+		`<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">` +
 		`<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>` +
 		`</svg>` +
-		`<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" class="star-svg">` +
+		`<svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" class="star-svg">` +
 		`<path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/>` +
 		`</svg>` +
 		`<span>Star</span>` +
 		`</a>` +
-		`</div>` +
-		`</header>`
+		`</div>`
 }
 
 func toolbar(nFiles, totalAdd, totalDel int) string {
@@ -125,7 +116,9 @@ func sidebar(files []diff.File, branch string) string {
 		}
 		b.WriteString(`</span></div>`)
 	}
-	b.WriteString(`</div></nav>`)
+	b.WriteString(`</div>`)
+	b.WriteString(sidebarFooter())
+	b.WriteString(`</nav>`)
 	return b.String()
 }
 
@@ -709,37 +702,37 @@ func css() string {
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:        #0d1117;
-  --bg-alt:    #161b22;
-  --bg-hover:  #1c2128;
-  --border:    #30363d;
-  --muted:     #484f58;
-  --subtle:    #8b949e;
-  --text:      #c9d1d9;
-  --blue:      #58a6ff;
-  --green:     #3fb950;
-  --red:       #f85149;
-  --yellow:    #e3b341;
-  --green-bg:  #0d4429;
-  --green-ln:  #0a3320;
-  --green-txt: #aff5b4;
-  --red-bg:    #3d1a1a;
-  --red-ln:    #2f1313;
-  --red-txt:   #ffa198;
-  --hunk-bg:   #1a2433;
+  --bg:        #1e1e1e;
+  --bg-alt:    #252526;
+  --bg-hover:  #2d2d2d;
+  --border:    #3e3e42;
+  --muted:     #6e6e6e;
+  --subtle:    #888888;
+  --text:      #d4d4d4;
+  --blue:      #4fc1ff;
+  --green:     #4ec94e;
+  --red:       #f44747;
+  --yellow:    #ddb348;
+  --green-bg:  #1a3320;
+  --green-ln:  #142918;
+  --green-txt: #b5ffb5;
+  --red-bg:    #3a1818;
+  --red-ln:    #2d1212;
+  --red-txt:   #ffb5b5;
+  --hunk-bg:   #1a2133;
   --font:      'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   --fs:        12px;
 }
 
 :root.light {
   --bg:        #ffffff;
-  --bg-alt:    #f6f8fa;
-  --bg-hover:  #eaeef2;
-  --border:    #d0d7de;
-  --muted:     #8c959f;
-  --subtle:    #57606a;
-  --text:      #24292f;
-  --blue:      #0969da;
+  --bg-alt:    #f3f3f3;
+  --bg-hover:  #e8e8e8;
+  --border:    #d4d4d4;
+  --muted:     #a0a0a0;
+  --subtle:    #6e6e6e;
+  --text:      #333333;
+  --blue:      #0066cc;
   --green:     #1a7f37;
   --red:       #cf222e;
   --yellow:    #9a6700;
@@ -758,46 +751,19 @@ body {
   background: var(--bg);
   color: var(--text);
   display: flex;
-  flex-direction: column;
   height: 100vh;
   overflow: hidden;
 }
 
-/* ── App header ─────────────────────────────────── */
-#app-header {
-  height: 46px;
-  background: var(--bg-alt);
-  border-bottom: 1px solid var(--border);
+/* ── Sidebar footer ─────────────────────────────── */
+#sidebar-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--border);
   flex-shrink: 0;
-  z-index: 10;
-}
-
-#app-logo {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
-#app-logo-img {
-  border-radius: 6px;
-  display: block;
-}
-
-#app-name {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: -0.02em;
-}
-
-#app-header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 #live-indicator {
@@ -835,13 +801,13 @@ body {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 11px;
+  padding: 4px 9px;
   background: var(--bg-hover);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--subtle);
   text-decoration: none;
-  font-size: 12px;
+  font-size: 11px;
   font-family: var(--font);
   transition: background 0.1s, border-color 0.1s, color 0.1s;
 }
@@ -853,14 +819,6 @@ body {
 }
 
 .star-svg { color: var(--yellow); }
-
-/* ── App body ───────────────────────────────────── */
-#app-body {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-  min-height: 0;
-}
 
 /* ── Sidebar ────────────────────────────────────── */
 #sidebar {
@@ -1109,7 +1067,7 @@ body {
 #search-bar {
   display: none;
   position: fixed;
-  top: 54px;
+  top: 48px;
   right: 20px;
   background: var(--bg-alt);
   border: 1px solid var(--border);
